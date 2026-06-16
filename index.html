@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>城市交通3D沙盘</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body, #root { width: 100%; height: 100%; overflow: hidden; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+      body { background: #0a0e1a; color: #e0e6f0; }
+
+      .top-bar {
+        position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+        display: flex; justify-content: center; gap: 32px; padding: 12px 24px;
+        background: linear-gradient(180deg, rgba(10,14,26,0.95) 0%, rgba(10,14,26,0.7) 80%, transparent 100%);
+        pointer-events: none;
+      }
+      .top-bar > div { pointer-events: auto; }
+
+      .stat-card {
+        display: flex; flex-direction: column; align-items: center;
+        background: rgba(20,30,55,0.85); border: 1px solid rgba(80,140,255,0.25);
+        border-radius: 12px; padding: 10px 28px; min-width: 150px;
+        backdrop-filter: blur(8px);
+      }
+      .stat-card .label { font-size: 12px; color: #7a8bb5; margin-bottom: 4px; }
+      .stat-card .value { font-size: 24px; font-weight: 700; }
+      .stat-card .value.green { color: #4ade80; }
+      .stat-card .value.yellow { color: #facc15; }
+      .stat-card .value.red { color: #f87171; }
+      .stat-card .value.blue { color: #60a5fa; }
+
+      .minimap {
+        position: fixed; top: 80px; left: 16px; z-index: 100;
+        width: 180px; height: 180px; border-radius: 12px;
+        background: rgba(12,18,36,0.92); border: 1px solid rgba(80,140,255,0.3);
+        backdrop-filter: blur(8px); overflow: hidden;
+      }
+      .minimap-title {
+        font-size: 11px; color: #7a8bb5; padding: 6px 10px 4px;
+        border-bottom: 1px solid rgba(80,140,255,0.15);
+      }
+      .minimap-canvas { width: 100%; height: calc(100% - 28px); }
+
+      .timeline {
+        position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+        padding: 14px 32px 18px;
+        background: linear-gradient(0deg, rgba(10,14,26,0.95) 0%, rgba(10,14,26,0.7) 80%, transparent 100%);
+      }
+      .timeline-inner {
+        max-width: 800px; margin: 0 auto;
+        background: rgba(20,30,55,0.85); border: 1px solid rgba(80,140,255,0.25);
+        border-radius: 12px; padding: 12px 20px;
+        backdrop-filter: blur(8px);
+      }
+      .timeline-header {
+        display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+      }
+      .timeline-header span { font-size: 12px; color: #7a8bb5; }
+      .timeline-controls { display: flex; gap: 8px; align-items: center; }
+      .timeline-btn {
+        background: rgba(60,90,160,0.4); border: 1px solid rgba(80,140,255,0.3);
+        color: #a0b8e0; border-radius: 6px; padding: 4px 12px; font-size: 12px;
+        cursor: pointer; transition: all 0.2s;
+      }
+      .timeline-btn:hover { background: rgba(80,120,200,0.5); color: #fff; }
+      .timeline-btn.active { background: rgba(80,140,255,0.5); color: #fff; border-color: #508cff; }
+      .speed-label { font-size: 11px; color: #5a7aaa; }
+      .timeline-slider {
+        width: 100%; appearance: none; height: 6px; border-radius: 3px;
+        background: linear-gradient(90deg, #1a2540, #2a3d60); outline: none; cursor: pointer;
+      }
+      .timeline-slider::-webkit-slider-thumb {
+        appearance: none; width: 16px; height: 16px; border-radius: 50%;
+        background: #508cff; border: 2px solid #fff; cursor: pointer;
+        box-shadow: 0 0 8px rgba(80,140,255,0.6);
+      }
+      .timeline-ticks {
+        display: flex; justify-content: space-between; padding: 4px 0 0;
+      }
+      .timeline-ticks span { font-size: 10px; color: #4a6080; }
+
+      .info-popup {
+        position: fixed; z-index: 200;
+        background: rgba(12,18,36,0.95); border: 1px solid rgba(80,140,255,0.4);
+        border-radius: 12px; padding: 16px 20px; min-width: 220px;
+        backdrop-filter: blur(12px); pointer-events: auto;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(80,140,255,0.15);
+      }
+      .info-popup .title {
+        font-size: 14px; font-weight: 600; margin-bottom: 10px;
+        color: #90b8ff; border-bottom: 1px solid rgba(80,140,255,0.2); padding-bottom: 8px;
+      }
+      .info-popup .row {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 4px 0; font-size: 13px;
+      }
+      .info-popup .row .lbl { color: #6a80a0; }
+      .info-popup .row .val { font-weight: 600; }
+      .info-popup .close-btn {
+        position: absolute; top: 8px; right: 12px;
+        background: none; border: none; color: #5a7aaa; font-size: 18px;
+        cursor: pointer; line-height: 1;
+      }
+      .info-popup .close-btn:hover { color: #f87171; }
+
+      .legend {
+        position: fixed; bottom: 120px; right: 16px; z-index: 100;
+        background: rgba(12,18,36,0.9); border: 1px solid rgba(80,140,255,0.25);
+        border-radius: 10px; padding: 10px 14px; backdrop-filter: blur(8px);
+      }
+      .legend-title { font-size: 11px; color: #7a8bb5; margin-bottom: 6px; }
+      .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; color: #a0b8e0; }
+      .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
