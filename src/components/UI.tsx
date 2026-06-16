@@ -3,6 +3,12 @@ import { useStore } from '../store'
 
 export function TopBar() {
   const stats = useStore(s => s.data.stats)
+  const roads = useStore(s => s.data.roads)
+  const controlMode = useStore(s => s.controlMode)
+  const setControlMode = useStore(s => s.setControlMode)
+  const clearAllBlocks = useStore(s => s.clearAllBlocks)
+
+  const blockedRoads = roads.filter(r => r.blocked)
 
   return (
     <div className="top-bar">
@@ -21,6 +27,32 @@ export function TopBar() {
         <span className={`value ${stats.accidents > 3 ? 'red' : stats.accidents > 1 ? 'yellow' : 'green'}`}>
           {stats.accidents} 起
         </span>
+      </div>
+      <div className="stat-card">
+        <span className="label">管制路段</span>
+        <span className={`value ${blockedRoads.length > 0 ? 'red' : 'green'}`}>
+          {blockedRoads.length} 条
+        </span>
+      </div>
+      <div className="control-panel">
+        <span className="control-label">操作模式:</span>
+        <button
+          className={`mode-btn ${controlMode === 'select' ? 'active' : ''}`}
+          onClick={() => setControlMode('select')}
+        >
+          查看模式
+        </button>
+        <button
+          className={`mode-btn ${controlMode === 'block' ? 'active' : ''}`}
+          onClick={() => setControlMode('block')}
+        >
+          管制模式
+        </button>
+        {blockedRoads.length > 0 && (
+          <button className="mode-btn clear-btn" onClick={clearAllBlocks}>
+            解除所有管制
+          </button>
+        )}
       </div>
     </div>
   )
@@ -92,12 +124,38 @@ export function Timeline() {
 }
 
 export function Legend() {
+  const controlMode = useStore(s => s.controlMode)
+  const diversionImpact = useStore(s => s.diversionImpact)
+  const roads = useStore(s => s.data.roads)
+
+  const affectedRoads = roads.filter(r => diversionImpact.has(r.id) && !r.blocked)
+
   return (
     <div className="legend">
       <div className="legend-title">路况图例</div>
       <div className="legend-item"><div className="legend-dot" style={{ background: '#22c55e' }} /> 畅通</div>
       <div className="legend-item"><div className="legend-dot" style={{ background: '#eab308' }} /> 缓行</div>
       <div className="legend-item"><div className="legend-dot" style={{ background: '#ef4444' }} /> 拥堵</div>
+      <div className="legend-item"><div className="legend-dot" style={{ background: '#6b7280' }} /> 管制封闭</div>
+      {controlMode === 'block' && (
+        <div className="legend-hint">
+          管制模式：点击路段可切换封锁/解封
+        </div>
+      )}
+      {affectedRoads.length > 0 && (
+        <div className="legend-section">
+          <div className="legend-title">绕行影响路段</div>
+          {affectedRoads.slice(0, 5).map(road => {
+            const impact = diversionImpact.get(road.id) ?? 0
+            return (
+              <div key={road.id} className="legend-item small">
+                <span className="road-name">{road.name}</span>
+                <span className="impact-badge">+{Math.round(impact * 100)}%</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -108,20 +166,71 @@ export function InfoPopup() {
   const popupPos = useStore(s => s.popupPos)
   const selectRoad = useStore(s => s.selectRoad)
   const selectLight = useStore(s => s.selectLight)
+  const blockRoad = useStore(s => s.blockRoad)
+  const unblockRoad = useStore(s => s.unblockRoad)
+  const diversionImpact = useStore(s => s.diversionImpact)
 
   if (!popupPos) return null
 
   if (selectedRoad) {
-    const tlColor = selectedRoad.trafficLevel === 'smooth' ? '#22c55e' : selectedRoad.trafficLevel === 'slow' ? '#eab308' : '#ef4444'
-    const tlText = selectedRoad.trafficLevel === 'smooth' ? '畅通' : selectedRoad.trafficLevel === 'slow' ? '缓行' : '拥堵'
+    const tlColor = selectedRoad.blocked ? '#6b7280' :
+                    selectedRoad.trafficLevel === 'smooth' ? '#22c55e' :
+                    selectedRoad.trafficLevel === 'slow' ? '#eab308' : '#ef4444'
+    const tlText = selectedRoad.blocked ? '管制封闭' :
+                   selectedRoad.trafficLevel === 'smooth' ? '畅通' :
+                   selectedRoad.trafficLevel === 'slow' ? '缓行' : '拥堵'
+
+    const impact = diversionImpact.get(selectedRoad.id)
+    const originalVolume = selectedRoad.originalVolume ?? selectedRoad.volume
+    const originalSpeed = selectedRoad.originalSpeed ?? selectedRoad.speed
+
     return (
       <div className="info-popup" style={{ left: popupPos.x + 16, top: popupPos.y - 60 }}>
         <button className="close-btn" onClick={() => selectRoad(null)}>&times;</button>
         <div className="title">{selectedRoad.name}</div>
+        {selectedRoad.blocked && (
+          <div className="blocked-banner">
+            🚧 {selectedRoad.blockReason || '交通管制'}
+          </div>
+        )}
         <div className="row"><span className="lbl">实时车速</span><span className="val" style={{ color: tlColor }}>{selectedRoad.speed} km/h</span></div>
         <div className="row"><span className="lbl">车流量</span><span className="val">{selectedRoad.volume} 辆/时</span></div>
         <div className="row"><span className="lbl">拥堵指数</span><span className="val" style={{ color: tlColor }}>{selectedRoad.congestionIndex.toFixed(1)}</span></div>
         <div className="row"><span className="lbl">路况状态</span><span className="val" style={{ color: tlColor }}>{tlText}</span></div>
+        {impact && impact > 0 && !selectedRoad.blocked && (
+          <div className="row"><span className="lbl">绕行影响</span><span className="val" style={{ color: '#f97316' }}>+{Math.round(impact * 100)}% 车流量</span></div>
+        )}
+        {!selectedRoad.blocked && (
+          <div className="row">
+            <span className="lbl">基准流量</span>
+            <span className="val">{originalVolume} 辆/时</span>
+          </div>
+        )}
+        <div className="popup-actions">
+          {selectedRoad.blocked ? (
+            <button className="action-btn unblock" onClick={() => {
+              unblockRoad(selectedRoad.id)
+              selectRoad(null)
+            }}>
+              解除管制
+            </button>
+          ) : (
+            <>
+              <button className="action-btn block-construction" onClick={() => {
+                blockRoad(selectedRoad.id, '施工管制')
+                selectRoad(null)
+              }}>
+                🚧 施工封路
+              </button>
+              <button className="action-btn block-event" onClick={() => {
+                blockRoad(selectedRoad.id, '活动管制')
+                selectRoad(null)
+              }}>
+                🎪 活动封路
+              </button>
+            </>
+          )}
+        </div>
       </div>
     )
   }
